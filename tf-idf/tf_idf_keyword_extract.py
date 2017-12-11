@@ -71,7 +71,7 @@ class KeywordExtractor(object):
 
 if __name__ == '__main__':
     kw_extractor = KeywordExtractor()
-    document = '辛亥革命发生在什么时间'
+    document = '玄武门政变发生在什么时间'
     words = jieba.cut(document)
     words_list = []
     for word in words:
