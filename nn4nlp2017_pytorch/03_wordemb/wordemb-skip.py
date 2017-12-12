@@ -3,7 +3,7 @@
 
 """
     @author:xiaotian zhao
-    @time:12/11/17
+    @time:12/12/17
 """
 
 import math
@@ -60,11 +60,7 @@ def read_dataset(file_name, lang):
             yield [lang.w2i[x] for x in line.strip().split()]
 
 
-class WordEmbCbowNet(nn.Module):
-    """
-    NOTES:
-        word embedding cbow net
-    """
+class WordEmbSikpNet(nn.Module):
     def __init__(
         self,
         vocab_size,
@@ -72,22 +68,28 @@ class WordEmbCbowNet(nn.Module):
         window_size,
         use_cuda
     ):
-        super(WordEmbCbowNet, self).__init__()
+        super(WordEmbSikpNet, self).__init__()
         self.vocab_size = vocab_size
-        self.embedding_size = embedding_size
+        self.embbeding_size = embedding_size
         self.window_size = window_size
         self.use_cuda = use_cuda
 
-        self.embedding = nn.Embedding(self.vocab_size, self.embedding_size)
-        self.linear = nn.Linear(2 * self.window_size * self.embedding_size, self.vocab_size)
+        self.input_embedding = nn.Embedding(self.vocab_size, self.embbeding_size)
+        self.output = nn.Linear(self.embbeding_size, self.vocab_size)
 
-    def forward(self, input):
-        input = Variable(torch.LongTensor(input)).view(1, len(input))
+    def forward(self, input_data):
+
+        input_data = Variable(torch.LongTensor(input_data))
         if self.use_cuda:
-            input = input.cuda()
-        word_emb = self.embedding(input).view(1, -1)
-        word_pred_logit = self.linear(word_emb)
-        return nn.LogSoftmax()(word_pred_logit)
+            input_data = input_data.cuda()
+
+        word_embed = self.input_embedding(input_data)
+
+        word_predict_props = self.output(word_embed)
+        word_predict_props = nn.LogSoftmax()(word_predict_props)
+        word_predict_props = torch.cat([word_predict_props for i in xrange(2 * self.window_size)], dim=0)
+
+        return word_predict_props
 
 
 if __name__ == '__main__':
@@ -107,8 +109,8 @@ if __name__ == '__main__':
             'train_data': '../data/ptb/train.txt',
             'dev_data': '../data/ptb/valid.txt',
             'max_len': 100,
-            'embedding_location': '/disk/xtzhao/models/nn4nlp_2017/cbow_embedding.txt',
-            'labels_location': '/disk/xtzhao/models/nn4nlp_2017/cbow_labels.txt'
+            'embedding_location': '/disk/xtzhao/models/nn4nlp_2017/skip_embedding.txt',
+            'labels_location': '/disk/xtzhao/models/nn4nlp_2017/skip_labels.txt'
         },
         "management": {
             "monitor_loss": 50,
@@ -139,7 +141,7 @@ if __name__ == '__main__':
         for i in range(lang.n_words):
             labels_file.write(lang.i2w[i] + '\n')
 
-    model = WordEmbCbowNet(
+    model = WordEmbSikpNet(
         vocab_size=lang.n_words,
         embedding_size=config['model']['embedding_size'],
         window_size=config['model']['window_size'],
@@ -167,11 +169,13 @@ if __name__ == '__main__':
             padded_sent = [Lang.SOS_Token] * window_size + sent + [Lang.SOS_Token] * window_size
             all_losses = []
             for i in xrange(window_size, len(sent) + window_size):
-                input_data = padded_sent[i-window_size:i] + padded_sent[i+1:i+window_size+1]
+                output_data = padded_sent[i-window_size:i] + padded_sent[i+1:i+window_size+1]
+                input_data = [padded_sent[i]]
                 pred_word_logit = model(input_data)
-                gold_output = Variable(torch.LongTensor([padded_sent[i]]))
+                gold_output = Variable(torch.LongTensor(output_data))
                 if use_cuda:
                     gold_output = gold_output.cuda()
+
                 loss = criterion(
                     pred_word_logit,
                     gold_output
@@ -192,11 +196,13 @@ if __name__ == '__main__':
             all_losses = []
 
             for i in xrange(window_size, len(sent) + window_size):
-                input_data = padded_sent[i - window_size:i] + padded_sent[i + 1:i + window_size + 1]
+                output_data = padded_sent[i - window_size:i] + padded_sent[i + 1:i + window_size + 1]
+                input_data = [padded_sent[i]]
                 pred_word_logit = model(input_data)
-                gold_output = Variable(torch.LongTensor([padded_sent[i]]))
+                gold_output = Variable(torch.LongTensor(output_data))
                 if use_cuda:
                     gold_output = gold_output.cuda()
+
                 loss = criterion(
                     pred_word_logit,
                     gold_output
@@ -211,7 +217,7 @@ if __name__ == '__main__':
 
         logging.info("Saving embedding files")
         with open(config['data']['embedding_location'], 'w') as embedding_file:
-            word_embed = model.embedding.cpu().weight.data.numpy()
+            word_embed = model.input_embedding.cpu().weight.data.numpy()
             for i in xrange(lang.n_words):
                 i_th_embedding = '\t'.join(map(str, word_embed[i]))
                 embedding_file.write(i_th_embedding + '\n')
